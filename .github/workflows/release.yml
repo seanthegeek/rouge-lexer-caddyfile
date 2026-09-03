@@ -1,0 +1,42 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  release:
+    name: Publish to RubyGems
+    runs-on: ubuntu-latest
+    # Needed for RubyGems trusted publishing (OIDC) and the GitHub release
+    permissions:
+      id-token: write
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4'
+          bundler-cache: true
+
+      - name: Check that the tag matches the gemspec version
+        run: |
+          version=$(ruby -e 'puts Gem::Specification.load("rouge-lexer-caddyfile.gemspec").version')
+          if [ "v$version" != "${GITHUB_REF_NAME}" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match gemspec version v$version"
+            exit 1
+          fi
+
+      - name: Run tests
+        run: bundle exec rake
+
+      # Uses RubyGems trusted publishing: configure this repository and workflow
+      # as a trusted publisher for the gem on rubygems.org. No API key needed.
+      - uses: rubygems/release-gem@v1
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: pkg/*.gem
+          generate_release_notes: true

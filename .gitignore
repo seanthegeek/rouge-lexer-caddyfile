@@ -1,0 +1,21 @@
+# Bundler
+/.bundle/
+/vendor/
+/Gemfile.lock
+
+# Gem build output
+*.gem
+/pkg/
+
+# Test coverage
+/coverage/
+
+# Editor files
+/.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db

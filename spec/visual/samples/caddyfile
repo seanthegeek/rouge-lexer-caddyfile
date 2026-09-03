@@ -1,0 +1,199 @@
+# Caddyfile visual sample: exercises every token type in the lexer.
+# Comments start with # and run to the end of the line.
+
+# Global options block (must be the first block in the file)
+{
+	debug
+	http_port    8080
+	https_port   8443
+	order replace after encode
+	persist_config off
+	email admin@example.com
+	acme_dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+	renewal_window_ratio 0.1
+
+	# Server options
+	servers :443 {
+		name https
+		max_header_size 5MB
+		listener_wrappers {
+			proxy_protocol {
+				timeout 2s
+				allow 192.168.86.1/24
+				fallback_policy reject
+			}
+			http_redirect
+			tls
+		}
+		trusted_proxies static private_ranges 12.34.56.0/24 1200:ab00::/32
+		strict_sni_host on
+	}
+
+	# Plugin apps: caddy-security, caddy-dynamicdns, crowdsec, caddy-l4, souin
+	security {
+		authorization policy admins_policy {
+			crypto key verify {env.JWT_SHARED_KEY}
+			allow roles authp/admin
+		}
+	}
+	dynamic_dns {
+		provider cloudflare {env.CLOUDFLARE_API_TOKEN}
+		ip_source simple_http https://icanhazip.com
+		versions ipv4 ipv6
+	}
+	crowdsec {
+		api_url http://localhost:8080
+		ticker_interval 15s
+	}
+	layer4 {
+		0.0.0.0:8888 {
+			@tls tls sni gamma.example.com
+			route @tls {
+				proxy three.machine.local:443
+			}
+		}
+	}
+	cache {
+		ttl 1000s
+		mode bypass
+	}
+}
+
+# Snippets and named routes
+(logging) {
+	log {
+		output file /var/log/caddy.log
+		format transform "{common_log}"
+	}
+}
+
+(greeting) {
+	{block}
+	respond "Yahaha! You found {args[0]}!"
+}
+
+&(app-proxy) {
+	reverse_proxy app-01:8080 app-02:8080
+}
+
+# Comma and space separated site addresses
+localhost:8080, example.com, www.example.com {
+	import logging
+	import greeting {
+		header +foo bar
+	}
+	invoke app-proxy
+}
+
+# Multi-line addresses, wildcards, schemes, ports and IP addresses
+*.example.net,
+http://127.0.0.1,
+:8443 {
+	tls {
+		dns route53 {
+			access_key_id {env.AWS_ACCESS_KEY_ID}
+		}
+		on_demand
+	}
+	abort
+}
+
+# Environment variables with defaults are substituted before parsing
+{$DOMAIN:localhost} {
+	reverse_proxy {$UPSTREAMS}
+}
+
+example.org {
+	root * /var/www
+	encode zstd br gzip
+
+	# Named matchers: one-liners and blocks
+	@post method POST
+	@websockets {
+		header Connection *Upgrade*
+		header Upgrade    websocket
+	}
+	@without-both {
+		not {
+			path /api/*
+			method POST
+		}
+	}
+	@html file {
+		try_files  {path}.html {path}
+		try_policy first_exist
+	}
+	@html-or-error file {path}.html {path} =404
+	@not_foo header !Foo
+	@assets path_regexp assets \.([a-f0-9]{6})\.(css|js)$
+	@denied not remote_ip private_ranges
+	@user `path_regexp('^/user/(\w*)') || path_regexp('^/(\w*)')`
+	@api <<CEL
+		{method} == "GET"
+		&& {path}.startsWith("/api/")
+		CEL
+
+	# Directives with matchers, arguments and placeholders
+	reverse_proxy @post localhost:9001 localhost:9002 {
+		lb_policy first
+	}
+	reverse_proxy /api/* localhost:8000 {
+		@success status 2xx
+		handle_response @success {
+			respond "Accelerated" 200
+		}
+	}
+	respond @api "Hello, API!"
+	abort @denied
+	redir https://www.{host}{uri}
+	php_fastcgi unix//run/php/php8.2-fpm.sock
+
+	# Quoting: escaped quotes, backticks, heredocs and multi-line tokens
+	respond "\"abc def\""
+	respond `{"foo": "bar"}`
+	respond <<HTML
+		<html>
+		  <body>Foo</body>
+		</html>
+		HTML 200
+
+	# Escaped placeholder braces and line continuation
+	respond \{not.a.placeholder}
+	reverse_proxy \
+		localhost:9001 \
+		localhost:9002
+
+	# Plugin directives: security, rate_limit, replace, mercure, vulcain, webdav, WAFs
+	authorize with admins_policy
+	rate_limit {
+		zone dynamic_example {
+			match {
+				method GET
+			}
+			key    {remote_host}
+			events 100
+			window 1m
+		}
+	}
+	replace re "\s+foo(bar|baz)\s+" " foo $1 "
+	mercure {
+		publisher_jwt {env.MERCURE_PUBLISHER_JWT_KEY}
+		anonymous
+	}
+	vulcain {
+		max_pushes 100
+	}
+	webdav /dav/* {
+		prefix /dav
+	}
+	cache
+	coraza_waf {
+		load_owasp_crs
+		directives `SecRuleEngine On`
+	}
+	waf {
+		rule_file rules.json
+		log_severity info
+	}
+	file_server /static # trailing comment
+}

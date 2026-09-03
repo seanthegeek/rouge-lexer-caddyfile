@@ -1,0 +1,55 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Ruby ${{ matrix.ruby }} / Rouge ${{ matrix.rouge }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Every Ruby the gemspec supports (required_ruby_version >= 3.0)
+        ruby: ['3.0', '3.1', '3.2', '3.3', '3.4']
+        # Every Rouge major the gemspec allows (rouge >= 3.4); the Gemfile pins
+        # this through ROUGE_VERSION
+        rouge: ['~> 3.4', '~> 4.0', '>= 5.0']
+    env:
+      ROUGE_VERSION: ${{ matrix.rouge }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ matrix.ruby }}
+          bundler-cache: true
+          # Keep one gem cache per Rouge constraint
+          cache-version: rouge-${{ matrix.rouge }}
+
+      - name: Show Rouge version
+        run: bundle exec ruby -e 'require "rouge"; puts Rouge.version'
+
+      - name: Run tests
+        run: bundle exec rake
+
+      - name: Check for error tokens in the demo and sample
+        run: |
+          bundle exec ruby -e '
+            require "rouge"
+            require "./lib/rouge/lexer/caddyfile"
+            lexer = Rouge::Lexers::Caddyfile.new
+            failed = false
+            %w[spec/demos/caddyfile spec/visual/samples/caddyfile].each do |path|
+              errors = lexer.lex(File.read(path)).select { |tok, _| tok == Rouge::Token::Tokens::Error }
+              puts "#{path}: #{errors.size} error tokens"
+              errors.each { |_, val| puts "  #{val.inspect}" }
+              failed ||= errors.any?
+            end
+            exit 1 if failed
+          '

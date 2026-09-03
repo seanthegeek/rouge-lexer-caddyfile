@@ -1,0 +1,13 @@
+# Serve a static site and proxy the API
+example.com {
+	root * /var/www
+	encode zstd gzip
+
+	@api path /api/*
+	reverse_proxy @api localhost:9000 {
+		lb_policy first
+	}
+
+	redir /old.html /new.html
+	file_server
+}

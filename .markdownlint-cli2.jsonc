@@ -1,0 +1,4 @@
+{
+  // Rules live in .markdownlint.json (shared with the VS Code extension)
+  "ignores": ["vendor/**", "node_modules/**"]
+}
