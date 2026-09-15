@@ -62,7 +62,10 @@
 # Snippets and named routes
 (logging) {
 	log {
-		output file /var/log/caddy.log
+		output file /var/log/caddy.log {
+			roll_size 10MB
+			roll_keep 5
+		}
 		format transform "{common_log}"
 	}
 }
@@ -93,6 +96,7 @@ http://127.0.0.1,
 		dns route53 {
 			access_key_id {env.AWS_ACCESS_KEY_ID}
 		}
+		alpn h2 http/1.1
 		on_demand
 	}
 	abort
@@ -138,6 +142,8 @@ example.org {
 		lb_policy first
 	}
 	reverse_proxy /api/* localhost:8000 {
+		health_uri /healthz
+		health_interval 10s
 		@success status 2xx
 		handle_response @success {
 			respond "Accelerated" 200

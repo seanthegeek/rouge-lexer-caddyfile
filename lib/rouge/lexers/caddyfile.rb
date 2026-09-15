@@ -76,20 +76,46 @@ module Rouge
       #          https://caddyserver.com/docs/caddyfile/matchers (file matcher)
       #          https://caddyserver.com/docs/caddyfile/concepts (lb_policy)
       #          https://caddyserver.com/docs/caddyfile/directives (handle_response)
+      #          https://caddyserver.com/docs/caddyfile/directives/log
+      #          https://caddyserver.com/docs/caddyfile/directives/tls
+      #          https://caddyserver.com/docs/caddyfile/directives/reverse_proxy
+      #          https://caddyserver.com/docs/caddyfile/directives/encode
+      #          https://caddyserver.com/docs/caddyfile/directives/header
+      #          https://caddyserver.com/docs/caddyfile/directives/file_server
+      #          https://caddyserver.com/docs/caddyfile/directives/php_fastcgi
       def self.subdirectives
         @subdirectives ||= Set.new %w(
-          0rtt allow any_common_name ask ca cert client_ip_headers deny dns
-          enable_full_duplex enforce_origin exclude fallback_policy format
-          handle_response http_redirect idle include intermediate
-          intermediate_cn intermediate_lifetime issuer keepalive_count
-          keepalive_idle keepalive_interval key key_id lb_policy level
-          listener_wrappers log_credentials mac_key maintenance_interval
-          max_header_size name observe_catchall_hosts on on_demand origins
-          otlp output per_host permission protocols proxy_protocol read_body
-          read_header renewal_window_ratio root root_cn root_common_name
-          split_path strict_sni_host timeout timeouts tls trace
-          trusted_proxies trusted_proxies_strict trusted_proxies_unix
-          try_files try_policy write
+          0rtt allow alpn alt_http_port alt_tlsalpn_port any_common_name ask authority
+          backup_time_format browse ca ca_root caller_key capture_stderr cert ciphers
+          client_auth client_ip_headers cookie curves defer delete deny dir
+          disable_canonical_uris disable_http_challenge disable_tlsalpn_challenge dns
+          dns_challenge_override_domain dns_ttl duration_format dynamic eab
+          enable_full_duplex endpoints enforce_origin env exclude fail_duration
+          fallback_policy fields file_limit filter flush_interval force_automate format
+          get_certificate handle_response handshake_timeout hash header_down header_up
+          health_body health_fails health_follow_redirects health_headers
+          health_interval health_method health_passes health_port health_request_body
+          health_status health_timeout health_upstream health_uri hostnames
+          http_redirect idle include index insecure_secrets_log insecure_skip_verify
+          intermediate intermediate_cn intermediate_lifetime interval ip_mask issuer
+          keepalive_count keepalive_idle keepalive_interval key key_id keys lb_policy
+          lb_retries lb_retry_match lb_try_duration lb_try_interval level level_format
+          level_key lifetime line_ending listener_wrappers load log_credentials mac_key
+          maintenance_interval max_fails max_header_size message_key minimum_length mode
+          name name_key no_hostname observe_catchall_hosts on on_demand origins otlp
+          output per_host permission precompressed profile propagation_delay
+          propagation_timeout protocols proxy_protocol read_body read_header
+          read_timeout regexp rename renegotiation renewal_window_ratio replace
+          replace_status request_buffers resolve_root_symlink response_buffers
+          reuse_private_keys reveal_symlinks roll_at roll_disabled roll_interval
+          roll_keep roll_keep_for roll_local_time roll_minutes roll_size
+          roll_uncompressed root root_cn root_common_name sampling server_name
+          sign_with_root soft_start sort split split_path stacktrace_key
+          stream_close_delay stream_timeout strict_sni_host test_dir thereafter time_key
+          time_local timeout timeouts tls to trace trust_der trust_pool trusted_proxies
+          trusted_proxies_strict trusted_proxies_unix trusted_roots try_files try_policy
+          unhealthy_latency unhealthy_request_count unhealthy_status validity_days
+          verifier wrap write write_timeout
         )
       end
 
@@ -120,16 +146,18 @@ module Rouge
       # Sources: https://caddyserver.com/docs/caddyfile/options
       #          https://caddyserver.com/docs/caddyfile/matchers
       #          https://caddyserver.com/docs/caddyfile/patterns (encode)
+      #          https://caddyserver.com/docs/caddyfile/directives/log
+      #          https://caddyserver.com/docs/caddyfile/directives/file_server
+      #          https://caddyserver.com/docs/caddyfile/directives/basic_auth
       def self.values
         @values ||= Set.new %w(
-          DEBUG ERROR FATAL INFO PANIC WARN
-          acme after before br disable_certs disable_redirects ed25519 file
-          file_system first first_exist first_exist_fallback grpc gzip h1 h2
-          h2c h3 http http_redirect https ignore ignore_loaded_certs
-          insecure_off json largest_size last local most_recently_modified
-          p256 p384 pem_file private_ranges proxy_protocol reject require
-          rsa2048 rsa4096 skip smallest smallest_size static stdout tls use
-          zerossl zstd
+          DEBUG ERROR FATAL INFO PANIC WARN acme after argon2id asc bcrypt before br
+          console desc disable_certs disable_redirects discard ed25519 file file_system
+          first first_exist first_exist_fallback grpc gzip h1 h2 h2c h3 http
+          http_redirect https ignore ignore_loaded_certs insecure_off json largest_size
+          last local most_recently_modified namedirfirst net p256 p384 pem_file
+          private_ranges proxy_protocol reject require rsa2048 rsa4096 size skip
+          smallest smallest_size static stderr stdout time tls use zerossl zstd
         )
       end
 
