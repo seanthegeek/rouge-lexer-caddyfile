@@ -141,6 +141,15 @@ class RougeLexerCaddyfileTest < Minitest::Test
     assert_includes toks, [Rouge::Token::Tokens::Name::Builtin, 'status']
   end
 
+  def test_filter_action_in_argument_position
+    # <field> ip_mask ... — the filter action word is the *second* word on
+    # the line (argument position, via classify_argument/values), not the
+    # line-start word covered by the cookie/query block tests below.
+    src = "example.com {\n\tlog {\n\t\tformat filter {\n\t\t\trequest>remote_ip ip_mask 16 32\n\t\t}\n\t}\n}\n"
+    toks = tokens(src)
+    assert_includes toks, [Rouge::Token::Tokens::Name::Constant, 'ip_mask']
+  end
+
   def test_log_filter_actions_in_cookie_block
     src = "example.com {\n\tlog {\n\t\tformat filter {\n\t\t\tfields {\n\t\t\t\tset_cookie cookie {\n" \
           "\t\t\t\t\tdelete session_id\n\t\t\t\t\treplace csrf_token REDACTED\n\t\t\t\t\thash user_id\n" \
