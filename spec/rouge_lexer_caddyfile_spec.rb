@@ -101,6 +101,72 @@ class RougeLexerCaddyfileTest < Minitest::Test
     assert_includes toks, [Rouge::Token::Tokens::Comment::Single, '# real comment']
   end
 
+  # Overlap-sensitive classifications: a word from one vocabulary that also
+  # appears in another (subdirective vs. matcher, subdirective vs. lb_policy
+  # value, subdirective vs. response matcher, subdirective vs. plugin
+  # directive) must resolve to the token for its actual role, in context.
+  def test_lb_retry_match_inline_matcher
+    toks = tokens("example.com {\n\treverse_proxy backend {\n\t\tlb_retry_match method GET\n\t}\n}\n")
+    assert_includes toks, [Rouge::Token::Tokens::Name::Attribute, 'lb_retry_match']
+    assert_includes toks, [Rouge::Token::Tokens::Name::Builtin, 'method']
+    assert_includes toks, [Rouge::Token::Tokens::Name::Constant, 'GET']
+  end
+
+  def test_lb_retry_match_block_matcher
+    src = "example.com {\n\treverse_proxy backend {\n\t\tlb_retry_match {\n\t\t\tmethod GET\n\t\t}\n\t}\n}\n"
+    toks = tokens(src)
+    assert_includes toks, [Rouge::Token::Tokens::Name::Attribute, 'lb_retry_match']
+    assert_includes toks, [Rouge::Token::Tokens::Name::Builtin, 'method']
+  end
+
+  def test_first_as_sampling_subdirective
+    src = "example.com {\n\tlog {\n\t\tsampling {\n\t\t\tfirst 10\n\t\t}\n\t}\n}\n"
+    toks = tokens(src)
+    assert_includes toks, [Rouge::Token::Tokens::Name::Attribute, 'first']
+  end
+
+  def test_first_as_lb_policy_value
+    toks = tokens("example.com {\n\treverse_proxy backend {\n\t\tlb_policy first\n\t}\n}\n")
+    assert_includes toks, [Rouge::Token::Tokens::Name::Constant, 'first']
+  end
+
+  def test_status_as_file_server_subdirective
+    toks = tokens("example.com {\n\tfile_server {\n\t\tstatus 404 410\n\t}\n}\n")
+    assert_includes toks, [Rouge::Token::Tokens::Name::Attribute, 'status']
+  end
+
+  def test_status_as_response_matcher
+    src = "example.com {\n\thandle_response {\n\t\t@bad status 500\n\t}\n}\n"
+    toks = tokens(src)
+    assert_includes toks, [Rouge::Token::Tokens::Name::Builtin, 'status']
+  end
+
+  def test_log_filter_actions_in_cookie_block
+    src = "example.com {\n\tlog {\n\t\tformat filter {\n\t\t\tfields {\n\t\t\t\tset_cookie cookie {\n" \
+          "\t\t\t\t\tdelete session_id\n\t\t\t\t\treplace csrf_token REDACTED\n\t\t\t\t\thash user_id\n" \
+          "\t\t\t\t}\n\t\t\t}\n\t\t}\n\t}\n}\n"
+    toks = tokens(src)
+    assert_includes toks, [Rouge::Token::Tokens::Name::Constant, 'cookie']
+    assert_includes toks, [Rouge::Token::Tokens::Name::Attribute, 'delete']
+    assert_includes toks, [Rouge::Token::Tokens::Name::Attribute, 'replace']
+    assert_includes toks, [Rouge::Token::Tokens::Name::Attribute, 'hash']
+    refute_includes toks, [Rouge::Token::Tokens::Keyword, 'replace']
+  end
+
+  def test_log_filter_actions_in_query_block
+    src = "example.com {\n\tlog {\n\t\tformat filter {\n\t\t\tfields {\n\t\t\t\turi query {\n" \
+          "\t\t\t\t\treplace token REDACTED\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t}\n}\n"
+    toks = tokens(src)
+    assert_includes toks, [Rouge::Token::Tokens::Name::Constant, 'query']
+    assert_includes toks, [Rouge::Token::Tokens::Name::Attribute, 'replace']
+    refute_includes toks, [Rouge::Token::Tokens::Keyword, 'replace']
+  end
+
+  def test_replace_directive_outside_filter_block_is_still_keyword
+    toks = tokens("example.com {\n\treplace {\n\t\tregex .* \"\" \"\"\n\t}\n}\n")
+    assert_includes toks, [Rouge::Token::Tokens::Keyword, 'replace']
+  end
+
   private
 
   def tokens(text)

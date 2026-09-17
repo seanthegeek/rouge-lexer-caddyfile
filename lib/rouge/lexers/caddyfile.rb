@@ -14,13 +14,15 @@ module Rouge
     # opening brace at the end of a line and the closing brace on a line by
     # itself. This lexer tracks that structure with a small set of states:
     #
-    # * +:root+          - line starts inside site blocks, snippets and
-    #                      directive blocks
-    # * +:global_block+  - line starts inside the global options block
-    # * +:matcher_block+ - line starts inside a named matcher block
-    # * +:address+       - the remainder of a site address line
+    # * +:root+             - line starts inside site blocks, snippets and
+    #                         directive blocks
+    # * +:global_block+     - line starts inside the global options block
+    # * +:matcher_block+    - line starts inside a named matcher block
+    # * +:log_filter_block+ - line starts inside a log filter's
+    #                         <field> cookie { } / <field> query { } block
+    # * +:address+          - the remainder of a site address line
     # * +:args+, +:gargs+, +:margs+ - the arguments of a line in each of the
-    #                      three block kinds
+    #                         three main block kinds
     #
     # Keywords come from the official Caddyfile documentation, plus the
     # documentation of the twenty most downloaded plugins on
@@ -313,6 +315,14 @@ module Rouge
       # Site addresses contain a dot, colon, slash or wildcard, or are localhost.
       ADDRESS = %r/[.:\/*]|\Alocalhost\z/
 
+      # <field> cookie { ... } / <field> query { ... } inside a log format
+      # filter's fields block. Their line-start words (delete, replace, hash)
+      # repeat the outer filter-action vocabulary, and "replace" also names a
+      # top-level plugin directive, so this pair is routed to
+      # :log_filter_block instead of falling back through :args into :root.
+      # Source: https://caddyserver.com/docs/caddyfile/directives/log
+      LOG_FILTER_BLOCK = %r/(cookie|query)([ \t]*)(\{)(?=[ \t]*(?:#.*)?\r?$)/
+
       state :block_common do
         rule %r/\s+/, Text::Whitespace
         rule %r/#.*/, Comment::Single
@@ -359,8 +369,11 @@ module Rouge
           if self.class.directives.include?(word) || self.class.plugin_directives.include?(word)
             token Keyword
             push :args
-          elsif word == 'match'
-            # match blocks (rate_limit, replace) contain matchers
+          elsif word == 'match' || word == 'lb_retry_match'
+            # match blocks (rate_limit, replace) and reverse_proxy's
+            # lb_retry_match (same matcher-token syntax as a named matcher,
+            # minus the @name) both contain matchers.
+            # Source: https://caddyserver.com/docs/caddyfile/directives/reverse_proxy
             token Name::Attribute
             push :margs
           elsif self.class.subdirectives.include?(word) || self.class.plugin_subdirectives.include?(word)
@@ -516,11 +529,38 @@ module Rouge
       # Arguments of a line in a site, snippet or directive block.
       state :args do
         rule OPEN_BLOCK, Punctuation, :pop!
+
+        rule LOG_FILTER_BLOCK do
+          groups Name::Constant, Text::Whitespace, Punctuation
+          pop!
+          push :log_filter_block
+        end
+
         mixin :arg_common
         rule ARG do |m|
           token classify_argument(m[0])
         end
         mixin :arg_fallback
+      end
+
+      # Line starts inside a log filter's <field> cookie { } / <field> query
+      # { } block (see LOG_FILTER_BLOCK). Filter-action words are checked
+      # before falling back to a plain Name, so "replace" reads as the filter
+      # action (Name::Attribute) rather than the unrelated top-level plugin
+      # directive of the same name.
+      state :log_filter_block do
+        mixin :block_common
+        rule %r/\}/, Punctuation, :pop!
+
+        rule WORD do |m|
+          word = m[0]
+          if self.class.subdirectives.include?(word) || self.class.plugin_subdirectives.include?(word)
+            token Name::Attribute
+          else
+            token Name
+          end
+          push :args
+        end
       end
 
       # Arguments of a line in the global options block.
