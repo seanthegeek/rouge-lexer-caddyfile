@@ -150,6 +150,37 @@ class RougeLexerCaddyfileTest < Minitest::Test
     assert_includes toks, [Rouge::Token::Tokens::Name::Constant, 'ip_mask']
   end
 
+  def test_log_filter_fields_wrapper_is_optional_shortcut
+    # Copilot review comments r4040360588 and r4040657016 both claimed the
+    # log filter fixtures without a "fields { }" wrapper are invalid Caddy
+    # config. They aren't: the log directive doc page states, verbatim, for
+    # both modules --
+    #   filter:  "As a shortcut, the fields block can be omitted and the
+    #             filters can be specified directly within the filter
+    #             block."
+    #   append:  "The fields block can be omitted and the fields can be
+    #             specified directly within the append block."
+    # (https://caddyserver.com/docs/caddyfile/directives/log). This locks in
+    # that the lexer treats the shortcut (unwrapped) form identically to the
+    # fully-wrapped form -- same field, same filter action, same tokens --
+    # rather than merely not erroring on it.
+    wrapped = tokens(
+      "example.com {\n\tlog {\n\t\tformat filter {\n\t\t\tfields {\n\t\t\t\t" \
+      "set_cookie cookie {\n\t\t\t\t\treplace csrf_token REDACTED\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t}\n}\n"
+    )
+    shortcut = tokens(
+      "example.com {\n\tlog {\n\t\tformat filter {\n\t\t\t" \
+      "set_cookie cookie {\n\t\t\t\treplace csrf_token REDACTED\n\t\t\t}\n\t\t}\n\t}\n}\n"
+    )
+
+    [wrapped, shortcut].each do |toks|
+      assert(toks.none? { |tok, _| tok == Rouge::Token::Tokens::Error }, 'no Error tokens')
+      assert_includes toks, [Rouge::Token::Tokens::Name::Constant, 'cookie']
+      assert_includes toks, [Rouge::Token::Tokens::Name::Attribute, 'replace']
+      refute_includes toks, [Rouge::Token::Tokens::Keyword, 'replace']
+    end
+  end
+
   def test_log_filter_actions_in_cookie_block
     src = "example.com {\n\tlog {\n\t\tformat filter {\n\t\t\tfields {\n\t\t\t\tset_cookie cookie {\n" \
           "\t\t\t\t\tdelete session_id\n\t\t\t\t\treplace csrf_token REDACTED\n\t\t\t\t\thash user_id\n" \
