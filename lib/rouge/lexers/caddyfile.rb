@@ -17,18 +17,30 @@ module Rouge
     # * +:root+             - line starts inside site blocks, snippets and
     #                         directive blocks
     # * +:global_block+     - line starts inside the global options block
-    # * +:matcher_block+    - line starts inside a named matcher block
+    # * +:matcher_block+    - line starts inside a named matcher block, and
+    #                         (like +:log_block+ below) nests properly: each
+    #                         block it opens (e.g. "not { }") pushes another
+    #                         +:matcher_block+ frame rather than popping out
+    # * +:log_block+        - line starts inside the log directive/option's
+    #                         own block, at any nesting depth (its own top
+    #                         level, or inside a nested "output { }" /
+    #                         "sampling { }") — kept separate from +:root+,
+    #                         which every *other* directive's block reuses
+    #                         flatly, so that log's "format" subdirective
+    #                         (see below) only gets special treatment inside
+    #                         an actual log block, never a same-named
+    #                         subdirective some other directive or plugin has
     # * +:log_format_block+, +:log_fields_block+, +:log_filter_block+ - line
     #                         starts inside log's "format filter { }" /
     #                         "format append { }", its nested "fields { }",
-    #                         and a field's "cookie { }" / "query { }"
-    #                         sub-block, respectively — kept separate from
-    #                         :root so the cookie/query filter-action words
-    #                         only take precedence there, not in every
-    #                         directive's arguments
+    #                         and a filter action's own "{ }" sub-block
+    #                         (ip_mask's, cookie's, query's), respectively —
+    #                         so their filter-action words only take
+    #                         precedence there, not in every directive's
+    #                         arguments
     # * +:address+          - the remainder of a site address line
-    # * +:args+, +:gargs+, +:margs+, +:format_args+, +:log_field_args+ - the
-    #                         arguments of a line in each block kind above
+    # * +:args+, +:gargs+, +:margs+, +:log_args+, +:format_args+,
+    #   +:log_field_args+  - the arguments of a line in each block kind above
     #
     # Keywords come from the official Caddyfile documentation, plus the
     # documentation of the twenty most downloaded plugins on
@@ -329,16 +341,6 @@ module Rouge
       # Source: https://caddyserver.com/docs/caddyfile/directives/log
       LOG_FORMAT_BLOCK = %r/(filter|append)([ \t]*)(\{)(?=[ \t]*(?:#.*)?\r?$)/
 
-      # <field> cookie { ... } / <field> query { ... } inside a log format
-      # filter's fields block. Their line-start words (delete, replace, hash)
-      # repeat the outer filter-action vocabulary, and "replace" also names a
-      # top-level plugin directive, so this pair is routed to
-      # :log_filter_block instead of falling back through :args into :root.
-      # Matched only from :log_field_args, which is reachable exclusively via
-      # LOG_FORMAT_BLOCK above, for the same reason.
-      # Source: https://caddyserver.com/docs/caddyfile/directives/log
-      LOG_FILTER_BLOCK = %r/(cookie|query)([ \t]*)(\{)(?=[ \t]*(?:#.*)?\r?$)/
-
       state :block_common do
         rule %r/\s+/, Text::Whitespace
         rule %r/#.*/, Comment::Single
@@ -382,7 +384,16 @@ module Rouge
 
         rule WORD do |m|
           word = m[0]
-          if self.class.directives.include?(word) || self.class.plugin_directives.include?(word)
+          if word == 'log'
+            # The log directive's own block gets a dedicated state
+            # (:log_block) instead of reusing :root, so that its "format"
+            # subdirective's filter-action precedence (see :format_args)
+            # only ever applies inside an actual log block, not to a
+            # same-named "format" subdirective some other directive or
+            # plugin might have.
+            token Keyword
+            push :log_args
+          elsif self.class.directives.include?(word) || self.class.plugin_directives.include?(word)
             token Keyword
             push :args
           elsif word == 'match' || word == 'lb_retry_match'
@@ -392,13 +403,6 @@ module Rouge
             # Source: https://caddyserver.com/docs/caddyfile/directives/reverse_proxy
             token Name::Attribute
             push :margs
-          elsif word == 'format'
-            # log's format module: only here (not the generic :args used by
-            # every other subdirective) do "filter"/"append" open a field
-            # list whose <field> cookie { } / <field> query { } sub-blocks
-            # need log-filter-action precedence instead of :root's.
-            token Name::Attribute
-            push :format_args
           elsif self.class.subdirectives.include?(word) || self.class.plugin_subdirectives.include?(word)
             token Name::Attribute
             push :args
@@ -559,8 +563,55 @@ module Rouge
         mixin :arg_fallback
       end
 
+      # Arguments of a line directly inside log's own block: the initial
+      # "log" line (from :root's word == 'log'), and "output"/"sampling",
+      # log's other two subdirectives that can open a block. Routing all
+      # three through this same state — instead of the generic :args, which
+      # would pop out to whatever is *below* :log_block — means every block
+      # they open pushes another :log_block frame, so each nested block's
+      # own "}" pops back to the right level instead of leaking out of log's
+      # block entirely (matching how :margs/:matcher_block nest "not { }").
+      state :log_args do
+        rule OPEN_BLOCK do
+          token Punctuation
+          pop!
+          push :log_block
+        end
+
+        mixin :args
+      end
+
+      # Line starts inside a log directive/option's own block, at any
+      # nesting depth (log's own top level, or inside a nested "output { }"
+      # / "sampling { }"). Identical to :root except "format", "output" and
+      # "sampling" are intercepted before :root's generic subdirective
+      # dispatch would treat them like any other subdirective:
+      # - "format" needs log-filter-action precedence (see :format_args)
+      #   that must not leak to a same-named subdirective some other
+      #   directive or plugin has outside an actual log block;
+      # - "output"/"sampling" must route their own block back through
+      #   :log_args (see above) rather than the generic :args, so this
+      #   state's own "}" only fires for a "}" that's actually log's own
+      #   (or one of these two subdirectives' own), never one belonging to
+      #   a deeper, unrelated nested block.
+      state :log_block do
+        rule %r/\}/, Punctuation, :pop!
+
+        rule %r/(?:output|sampling)#{BOUNDARY}/ do
+          token Name::Attribute
+          push :log_args
+        end
+
+        rule %r/format#{BOUNDARY}/ do
+          token Name::Attribute
+          push :format_args
+        end
+
+        mixin :root
+      end
+
       # Arguments of log's "format" line specifically (pushed only from
-      # :root's word == 'format' branch). Recognises "filter {" / "append {"
+      # :log_block's "format" rule above). Recognises "filter {" / "append {"
       # so their field list gets log-filter-action precedence; any other
       # argument (an encoder name with no block, e.g. plain "format json")
       # falls through to ordinary :args behavior.
@@ -615,12 +666,19 @@ module Rouge
       end
 
       # Arguments of a <field> line inside log's format filter/append field
-      # list (see LOG_FILTER_BLOCK) — the only argument state that carries
-      # the cookie/query sub-block precedence rule, since it's reachable only
-      # via :log_format_block / :log_fields_block.
+      # list — the only argument state that routes an opening block to
+      # :log_filter_block instead of popping out to the enclosing state.
+      # Every documented filter action that takes a block (ip_mask, cookie,
+      # query) shares that same nested-block grammar, regardless of what
+      # precedes the brace (ip_mask's block follows two extra arguments,
+      # e.g. "ip_mask 16 32 { }", so matching specific words before the
+      # brace — as an earlier version of this state did — missed it and let
+      # the state fall back to the generic OPEN_BLOCK pop, which returned
+      # all the way to :log_format_block and let its closing "}" pop back to
+      # :root one level too early, mis-scoping everything that followed).
       state :log_field_args do
-        rule LOG_FILTER_BLOCK do
-          groups Name::Constant, Text::Whitespace, Punctuation
+        rule OPEN_BLOCK do
+          token Punctuation
           pop!
           push :log_filter_block
         end
@@ -628,11 +686,12 @@ module Rouge
         mixin :args
       end
 
-      # Line starts inside a log filter's <field> cookie { } / <field> query
-      # { } block (see LOG_FILTER_BLOCK). Filter-action words are checked
-      # before falling back to a plain Name, so "replace" reads as the filter
-      # action (Name::Attribute) rather than the unrelated top-level plugin
-      # directive of the same name.
+      # Line starts inside a log filter action's own nested block: ip_mask's
+      # "{ ipv4 <cidr> ipv6 <cidr> }", or cookie/query's
+      # "{ delete|replace|hash <key> ... }" (see :log_field_args). Filter and
+      # sub-option words are checked before falling back to a plain Name, so
+      # e.g. "replace" reads as the filter action (Name::Attribute) rather
+      # than the unrelated top-level plugin directive of the same name.
       state :log_filter_block do
         mixin :block_common
         rule %r/\}/, Punctuation, :pop!

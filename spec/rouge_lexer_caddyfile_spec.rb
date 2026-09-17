@@ -225,6 +225,55 @@ class RougeLexerCaddyfileTest < Minitest::Test
     assert_includes toks, [Rouge::Token::Tokens::Keyword::Constant, 'off']
   end
 
+  def test_format_precedence_does_not_leak_to_unrelated_site_blocks
+    # review r4040800739: log's "format" subdirective must only gain
+    # log-filter-action precedence (:format_args) while actually inside a
+    # log block (:log_block) -- not for the rest of the file. A later,
+    # separate site block's own "format" word (here: an unrecognized word,
+    # standing in for a same-named subdirective some other directive or
+    # plugin might have) must resolve as an ordinary word, not be swept into
+    # log's field-list dispatch just because an earlier site block used log.
+    src = "site1.com {\n\tlog {\n\t\tformat console\n\t}\n}\n" \
+          "site2.com {\n\tsome_directive format filter {\n\t\tfoo bar\n\t}\n}\n"
+    toks = tokens(src)
+    assert_includes toks, [Rouge::Token::Tokens::Name::Attribute, 'format']  # site1's log format
+    assert_includes toks, [Rouge::Token::Tokens::Name, 'format']             # site2's unrelated word
+  end
+
+  def test_log_block_nesting_survives_sampling_and_output_sub_blocks
+    # review r4040800739 (regression guard for the fix's own mechanism): a
+    # directive after log's block closes -- and a nested log sub-block's own
+    # "}" (sampling, output) -- must not be confused with log's own closing
+    # brace. Each nested block :log_block opens must pop back to the right
+    # level (mirroring how :matcher_block nests "not { }"), not leak out of
+    # log's block early or never leave it at all.
+    src = "example.com {\n\tlog {\n\t\tsampling {\n\t\t\tfirst 10\n\t\t}\n\t\t" \
+          "output file /var/log/caddy.log {\n\t\t\troll_size 10MB\n\t\t}\n\t\tlevel INFO\n\t}\n\treverse_proxy backend\n}\n"
+    toks = tokens(src)
+    assert_includes toks, [Rouge::Token::Tokens::Name::Attribute, 'first']
+    assert_includes toks, [Rouge::Token::Tokens::Name::Attribute, 'roll_size']
+    assert_includes toks, [Rouge::Token::Tokens::Name::Attribute, 'level']
+    assert_includes toks, [Rouge::Token::Tokens::Keyword, 'reverse_proxy']
+  end
+
+  def test_ip_mask_block_preserves_enclosing_format_state
+    # review r4040800798: ip_mask's own "{ ipv4 <cidr> ipv6 <cidr> }" block
+    # follows two extra arguments ("ip_mask 16 32 {"), so a rule that only
+    # matched "cookie {" / "query {" text missed it, fell back to a plain
+    # OPEN_BLOCK pop, and returned one level too far -- leaking log-filter
+    # scope for everything that followed. ipv4/ipv6 must classify correctly,
+    # and a *subsequent* field's query block (a sibling line, not nested
+    # inside ip_mask) must still get filter-action precedence afterward.
+    src = "example.com {\n\tlog {\n\t\tformat filter {\n\t\t\trequest>remote_ip ip_mask 16 32 {\n" \
+          "\t\t\t\tipv4 16\n\t\t\t\tipv6 32\n\t\t\t}\n\t\t\trequest>uri query {\n\t\t\t\treplace token X\n" \
+          "\t\t\t}\n\t\t}\n\t}\n}\n"
+    toks = tokens(src)
+    assert_includes toks, [Rouge::Token::Tokens::Name::Attribute, 'ipv4']
+    assert_includes toks, [Rouge::Token::Tokens::Name::Attribute, 'ipv6']
+    assert_includes toks, [Rouge::Token::Tokens::Name::Attribute, 'replace']
+    refute_includes toks, [Rouge::Token::Tokens::Keyword, 'replace']
+  end
+
   private
 
   def tokens(text)
