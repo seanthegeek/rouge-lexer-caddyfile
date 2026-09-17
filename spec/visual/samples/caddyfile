@@ -203,3 +203,60 @@ example.org {
 	}
 	file_server /static # trailing comment
 }
+
+# reverse_proxy's http transport: network proxy, versions, compression
+backend.example.com {
+	reverse_proxy backend:9000 {
+		transport http {
+			versions h2 2
+			compression off
+			proxy_protocol v2
+			keepalive_idle_conns 64
+			network_proxy url http://proxy.internal:8080
+		}
+	}
+}
+
+# tls protocol pinning, trust pool providers, client cert verification
+mtls.example.com {
+	tls {
+		protocols tls1.2 tls1.3
+		client_auth {
+			mode require_and_verify
+			trust_pool file {
+				pem_file /etc/caddy/ca.pem
+			}
+			verifier leaf {
+				folder /etc/caddy/allowed_certs
+			}
+		}
+		issuer internal {
+			ca local
+		}
+	}
+}
+
+# log field filtering: format filter, the ip_mask and query sub-blocks
+filtered.example.com {
+	log {
+		format filter {
+			wrap console
+			request>remote_ip ip_mask 16 32 {
+				ipv4 16
+				ipv6 32
+			}
+			request>uri query {
+				delete session_id
+			}
+		}
+	}
+}
+
+# log format append: adds extra fields to every log entry
+appended.example.com {
+	log {
+		format append {
+			instance {env.HOSTNAME}
+		}
+	}
+}

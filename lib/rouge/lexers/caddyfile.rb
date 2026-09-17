@@ -87,35 +87,42 @@ module Rouge
         @subdirectives ||= Set.new %w(
           0rtt allow alpn alt_http_port alt_tlsalpn_port any_common_name ask authority
           backup_time_format browse ca ca_root caller_key capture_stderr cert ciphers
-          client_auth client_ip_headers cookie curves defer delete deny dial_timeout dir
-          disable_canonical_uris disable_http_challenge disable_tlsalpn_challenge dns
+          client_auth client_ip_headers compression cookie curves defer delete deny
+          dial_fallback_delay dial_timeout dir disable_canonical_uris
+          disable_http_challenge disable_tlsalpn_challenge dns
           dns_challenge_override_domain dns_ttl duration_format dynamic eab
-          enable_full_duplex endpoints enforce_origin env exclude fail_duration
-          fallback_policy fields file_limit filter first flush_interval force_automate format
-          get_certificate handle_response handshake_timeout hash header_down header_up
-          health_body health_fails health_follow_redirects health_headers
-          health_interval health_method health_passes health_port health_request_body
-          health_status health_timeout health_upstream health_uri hostnames
-          http_redirect idle include index insecure_secrets_log insecure_skip_verify
-          intermediate intermediate_cn intermediate_lifetime interval ip_mask issuer
-          keepalive_count keepalive_idle keepalive_interval key key_id keys lb_policy
-          lb_retries lb_retry_match lb_try_duration lb_try_interval level level_format
-          level_key lifetime line_ending listener_wrappers load log_credentials mac_key
-          maintenance_interval max_fails max_header_size message_key minimum_length mode
-          name name_key no_hostname observe_catchall_hosts on on_demand origins otlp
-          output per_host permission precompressed profile propagation_delay
-          propagation_timeout protocols proxy_protocol read_body read_header
-          read_timeout regexp rename renegotiation renewal_window_ratio replace
-          replace_status request_buffers resolve_root_symlink response_buffers
-          reuse_private_keys reveal_symlinks roll_at roll_disabled
-          roll_interval roll_keep roll_keep_for roll_local_time roll_minutes roll_size
+          enable_full_duplex endpoints enforce_origin env exclude
+          expect_continue_timeout fail_duration fallback_policy fields file file_limit
+          filter first flush_interval folder force_automate format get_certificate
+          handle_response handshake_timeout hash header_down header_up health_body
+          health_fails health_follow_redirects health_headers health_interval
+          health_method health_passes health_port health_request_body health_status
+          health_timeout health_upstream health_uri hostnames http_redirect idle include
+          index insecure_secrets_log insecure_skip_verify intermediate intermediate_cn
+          intermediate_lifetime interval ip_mask ipv4 ipv6 issuer keepalive_count
+          keepalive_idle keepalive_idle_conns keepalive_idle_conns_per_host
+          keepalive_interval key key_id keys lb_policy lb_retries lb_retry_match
+          lb_try_duration lb_try_interval level level_format level_key lifetime
+          line_ending listener_wrappers load log_credentials mac_key
+          maintenance_interval max_conns_per_host max_fails max_header_size
+          max_response_header message_key minimum_length mode name name_key
+          network_proxy no_hostname observe_catchall_hosts on on_demand origins otlp
+          output pem pem_file per_host permission precompressed profile
+          propagation_delay propagation_timeout protocols proxy_protocol query read_body
+          read_buffer read_header read_timeout regexp rename renegotiation
+          renewal_window_ratio replace replace_status request_buffers
+          resolve_root_symlink resolvers response_buffers response_header_timeout
+          reuse_private_keys reveal_symlinks roll_at roll_disabled roll_interval
+          roll_keep roll_keep_for roll_local_time roll_minutes roll_size
           roll_uncompressed root root_cn root_common_name sampling server_name
-          sign_with_root soft_start sort split split_path stacktrace_key status
+          sign_with_root soft_start sort split split_path stacktrace_key status storage
           stream_close_delay stream_timeout strict_sni_host test_dir thereafter time_key
-          time_local timeout timeouts tls to trace trust_der trust_pool trusted_proxies
+          time_local timeout timeouts tls tls_client_auth tls_curves tls_except_ports
+          tls_insecure_skip_verify tls_renegotiation tls_server_name tls_timeout
+          tls_trust_pool to trace transport trust_der trust_pool trusted_proxies
           trusted_proxies_strict trusted_proxies_unix trusted_roots try_files try_policy
           unhealthy_latency unhealthy_request_count unhealthy_status validity_days
-          verifier wrap write write_timeout
+          verifier versions wrap write write_buffer write_timeout
         )
       end
 
@@ -149,18 +156,23 @@ module Rouge
       #          https://caddyserver.com/docs/caddyfile/directives/log
       #          https://caddyserver.com/docs/caddyfile/directives/file_server
       #          https://caddyserver.com/docs/caddyfile/directives/basic_auth
-      #          https://caddyserver.com/docs/caddyfile/directives/tls (client_auth, renegotiation)
-      #          https://caddyserver.com/docs/caddyfile/directives/reverse_proxy (network_proxy)
+      #          https://caddyserver.com/docs/caddyfile/directives/tls (client_auth,
+      #          renegotiation, tls directive argument, trust pool providers, verifier
+      #          loaders, issuer modules)
+      #          https://caddyserver.com/docs/caddyfile/directives/reverse_proxy
+      #          (network_proxy, proxy_protocol)
       def self.values
         @values ||= Set.new %w(
-          DEBUG ERROR FATAL INFO PANIC WARN acme after argon2id asc bcrypt before br
-          console desc disable_certs disable_redirects discard ed25519 file file_system
-          filter first first_exist first_exist_fallback freely grpc gzip h1 h2
-          h2c h3 http http_redirect https ignore ignore_loaded_certs insecure_off
-          json largest_size last local most_recently_modified name namedirfirst net never
-          none once p256 p384 pem_file private_ranges proxy_protocol reject request require
-          require_and_verify rsa2048 rsa4096 size skip smallest smallest_size static stderr
-          stdout time tls use verify_if_given zerossl zstd
+          DEBUG ERROR FATAL INFO PANIC WARN acme after append argon2id asc bcrypt before
+          br console cookie delete desc disable_certs disable_redirects discard ed25519
+          file file_system filter first first_exist first_exist_fallback folder freely
+          grpc gzip h1 h2 h2c h3 hash http http_redirect https ignore
+          ignore_loaded_certs inline insecure_off internal ip_mask json largest_size
+          last leaf local most_recently_modified name namedirfirst net never none once
+          p256 p384 pem pem_file pki_intermediate pki_root private_ranges proxy_protocol
+          query regexp reject rename replace request require require_and_verify rsa2048
+          rsa4096 size skip smallest smallest_size static stderr stdout storage
+          tailscale time tls tls1.2 tls1.3 url use v1 v2 verify_if_given zerossl zstd
         )
       end
 
