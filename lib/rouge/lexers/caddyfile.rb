@@ -18,11 +18,17 @@ module Rouge
     #                         directive blocks
     # * +:global_block+     - line starts inside the global options block
     # * +:matcher_block+    - line starts inside a named matcher block
-    # * +:log_filter_block+ - line starts inside a log filter's
-    #                         <field> cookie { } / <field> query { } block
+    # * +:log_format_block+, +:log_fields_block+, +:log_filter_block+ - line
+    #                         starts inside log's "format filter { }" /
+    #                         "format append { }", its nested "fields { }",
+    #                         and a field's "cookie { }" / "query { }"
+    #                         sub-block, respectively — kept separate from
+    #                         :root so the cookie/query filter-action words
+    #                         only take precedence there, not in every
+    #                         directive's arguments
     # * +:address+          - the remainder of a site address line
-    # * +:args+, +:gargs+, +:margs+ - the arguments of a line in each of the
-    #                         three main block kinds
+    # * +:args+, +:gargs+, +:margs+, +:format_args+, +:log_field_args+ - the
+    #                         arguments of a line in each block kind above
     #
     # Keywords come from the official Caddyfile documentation, plus the
     # documentation of the twenty most downloaded plugins on
@@ -101,8 +107,8 @@ module Rouge
           health_method health_passes health_port health_request_body health_status
           health_timeout health_upstream health_uri hostnames http_redirect idle include
           index insecure_secrets_log insecure_skip_verify intermediate intermediate_cn
-          intermediate_lifetime interval ip_mask ipv4 ipv6 issuer keepalive_count
-          keepalive_idle keepalive_idle_conns keepalive_idle_conns_per_host
+          intermediate_lifetime interval ip_mask ipv4 ipv6 issuer keepalive
+          keepalive_count keepalive_idle keepalive_idle_conns keepalive_idle_conns_per_host
           keepalive_interval key key_id keys lb_policy lb_retries lb_retry_match
           lb_try_duration lb_try_interval level level_format level_key lifetime
           line_ending listener_wrappers load log_credentials mac_key
@@ -315,11 +321,21 @@ module Rouge
       # Site addresses contain a dot, colon, slash or wildcard, or are localhost.
       ADDRESS = %r/[.:\/*]|\Alocalhost\z/
 
+      # log's "format filter {" / "format append {": opens the field list
+      # handled by :log_format_block. Matched only from :format_args (the
+      # dedicated argument state pushed for the 'format' subdirective), not
+      # from the generic :args every other subdirective and plugin construct
+      # shares, so this never fires outside a log directive's format module.
+      # Source: https://caddyserver.com/docs/caddyfile/directives/log
+      LOG_FORMAT_BLOCK = %r/(filter|append)([ \t]*)(\{)(?=[ \t]*(?:#.*)?\r?$)/
+
       # <field> cookie { ... } / <field> query { ... } inside a log format
       # filter's fields block. Their line-start words (delete, replace, hash)
       # repeat the outer filter-action vocabulary, and "replace" also names a
       # top-level plugin directive, so this pair is routed to
       # :log_filter_block instead of falling back through :args into :root.
+      # Matched only from :log_field_args, which is reachable exclusively via
+      # LOG_FORMAT_BLOCK above, for the same reason.
       # Source: https://caddyserver.com/docs/caddyfile/directives/log
       LOG_FILTER_BLOCK = %r/(cookie|query)([ \t]*)(\{)(?=[ \t]*(?:#.*)?\r?$)/
 
@@ -376,6 +392,13 @@ module Rouge
             # Source: https://caddyserver.com/docs/caddyfile/directives/reverse_proxy
             token Name::Attribute
             push :margs
+          elsif word == 'format'
+            # log's format module: only here (not the generic :args used by
+            # every other subdirective) do "filter"/"append" open a field
+            # list whose <field> cookie { } / <field> query { } sub-blocks
+            # need log-filter-action precedence instead of :root's.
+            token Name::Attribute
+            push :format_args
           elsif self.class.subdirectives.include?(word) || self.class.plugin_subdirectives.include?(word)
             token Name::Attribute
             push :args
@@ -529,18 +552,80 @@ module Rouge
       # Arguments of a line in a site, snippet or directive block.
       state :args do
         rule OPEN_BLOCK, Punctuation, :pop!
+        mixin :arg_common
+        rule ARG do |m|
+          token classify_argument(m[0])
+        end
+        mixin :arg_fallback
+      end
 
+      # Arguments of log's "format" line specifically (pushed only from
+      # :root's word == 'format' branch). Recognises "filter {" / "append {"
+      # so their field list gets log-filter-action precedence; any other
+      # argument (an encoder name with no block, e.g. plain "format json")
+      # falls through to ordinary :args behavior.
+      state :format_args do
+        rule LOG_FORMAT_BLOCK do
+          groups Name::Constant, Text::Whitespace, Punctuation
+          pop!
+          push :log_format_block
+        end
+
+        mixin :args
+      end
+
+      # Line starts inside "format filter { }" / "format append { }" (see
+      # LOG_FORMAT_BLOCK). "fields { }" opens the same field list one level
+      # deeper; "wrap" takes an ordinary encoder-module argument; anything
+      # else is a bare <field> name using the fields-block-optional shortcut,
+      # whose filter action follows in argument position.
+      # Source: https://caddyserver.com/docs/caddyfile/directives/log
+      state :log_format_block do
+        mixin :block_common
+        rule %r/\}/, Punctuation, :pop!
+
+        rule %r/(fields)([ \t]*)(\{)(?=[ \t]*(?:#.*)?\r?$)/ do
+          groups Name::Attribute, Text::Whitespace, Punctuation
+          push :log_fields_block
+        end
+
+        rule WORD do |m|
+          word = m[0]
+          if word == 'wrap'
+            token Name::Attribute
+            push :args
+          else
+            token Name
+            push :log_field_args
+          end
+        end
+      end
+
+      # Line starts inside log format filter/append's "fields { }" block:
+      # every line is a bare <field> name, with its filter action following
+      # in argument position.
+      state :log_fields_block do
+        mixin :block_common
+        rule %r/\}/, Punctuation, :pop!
+
+        rule WORD do |m|
+          token Name
+          push :log_field_args
+        end
+      end
+
+      # Arguments of a <field> line inside log's format filter/append field
+      # list (see LOG_FILTER_BLOCK) — the only argument state that carries
+      # the cookie/query sub-block precedence rule, since it's reachable only
+      # via :log_format_block / :log_fields_block.
+      state :log_field_args do
         rule LOG_FILTER_BLOCK do
           groups Name::Constant, Text::Whitespace, Punctuation
           pop!
           push :log_filter_block
         end
 
-        mixin :arg_common
-        rule ARG do |m|
-          token classify_argument(m[0])
-        end
-        mixin :arg_fallback
+        mixin :args
       end
 
       # Line starts inside a log filter's <field> cookie { } / <field> query

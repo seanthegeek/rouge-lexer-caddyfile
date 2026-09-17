@@ -212,6 +212,7 @@ backend.example.com {
 			versions h2 2
 			compression off
 			proxy_protocol v2
+			keepalive off
 			keepalive_idle_conns 64
 			network_proxy url http://proxy.internal:8080
 		}

@@ -176,6 +176,24 @@ class RougeLexerCaddyfileTest < Minitest::Test
     assert_includes toks, [Rouge::Token::Tokens::Keyword, 'replace']
   end
 
+  def test_log_filter_precedence_does_not_leak_to_unrelated_blocks
+    # A "query {" / "cookie {" ending some other construct's argument line
+    # must not gain log-filter-action precedence -- only log's own
+    # "format filter" / "format append" field list (:log_format_block /
+    # :log_fields_block / :log_field_args) does. Otherwise this directive's
+    # own "replace" would misread as the log filter action instead of the
+    # plugin directive it actually is.
+    toks = tokens("example.com {\n\tsome_directive foo query {\n\t\treplace bar\n\t}\n}\n")
+    assert_includes toks, [Rouge::Token::Tokens::Keyword, 'replace']
+  end
+
+  def test_keepalive_as_transport_http_subdirective
+    src = "example.com {\n\treverse_proxy backend {\n\t\ttransport http {\n\t\t\tkeepalive off\n\t\t}\n\t}\n}\n"
+    toks = tokens(src)
+    assert_includes toks, [Rouge::Token::Tokens::Name::Attribute, 'keepalive']
+    assert_includes toks, [Rouge::Token::Tokens::Keyword::Constant, 'off']
+  end
+
   private
 
   def tokens(text)
