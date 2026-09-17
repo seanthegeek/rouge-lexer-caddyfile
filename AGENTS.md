@@ -234,7 +234,7 @@ shared `rouge-lexer-<lang>` template is copied to another language.
   had the latter and raised `NoMethodError` under rackup.
 - Rack 3 (rackup 2.x with puma) rejects a string status; `config.ru` must
   return the integer `200` or `Rack::Lint` fails the request.
-- The demo must stay 5-15 lines and the visual sample 50-200 lines. The tests
+- The demo must stay 5-15 lines and the visual sample 50-300 lines. The tests
   only check input reconstruction and zero error tokens, so check line counts
   with `wc -l` by hand.
 - Plugin coverage is the top twenty packages by the `downloads` field of
