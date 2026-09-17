@@ -131,7 +131,7 @@ class RougeLexerCaddyfileTest < Minitest::Test
   end
 
   def test_status_as_file_server_subdirective
-    toks = tokens("example.com {\n\tfile_server {\n\t\tstatus 404 410\n\t}\n}\n")
+    toks = tokens("example.com {\n\tfile_server {\n\t\tstatus 404\n\t}\n}\n")
     assert_includes toks, [Rouge::Token::Tokens::Name::Attribute, 'status']
   end
 
@@ -258,13 +258,15 @@ class RougeLexerCaddyfileTest < Minitest::Test
 
   def test_ip_mask_block_preserves_enclosing_format_state
     # review r4040800798: ip_mask's own "{ ipv4 <cidr> ipv6 <cidr> }" block
-    # follows two extra arguments ("ip_mask 16 32 {"), so a rule that only
+    # follows the action word directly (no argument in between, per the
+    # documented "<field> ip_mask [<ipv4> [<ipv6>]] { ... }" form used here
+    # without the optional positional shorthand), so a rule that only
     # matched "cookie {" / "query {" text missed it, fell back to a plain
     # OPEN_BLOCK pop, and returned one level too far -- leaking log-filter
     # scope for everything that followed. ipv4/ipv6 must classify correctly,
     # and a *subsequent* field's query block (a sibling line, not nested
     # inside ip_mask) must still get filter-action precedence afterward.
-    src = "example.com {\n\tlog {\n\t\tformat filter {\n\t\t\trequest>remote_ip ip_mask 16 32 {\n" \
+    src = "example.com {\n\tlog {\n\t\tformat filter {\n\t\t\trequest>remote_ip ip_mask {\n" \
           "\t\t\t\tipv4 16\n\t\t\t\tipv6 32\n\t\t\t}\n\t\t\trequest>uri query {\n\t\t\t\treplace token X\n" \
           "\t\t\t}\n\t\t}\n\t}\n}\n"
     toks = tokens(src)

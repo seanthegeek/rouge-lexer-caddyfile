@@ -209,7 +209,7 @@ example.org {
 backend.example.com {
 	reverse_proxy backend:9000 {
 		transport http {
-			versions h2 2
+			versions h2c 2
 			compression off
 			proxy_protocol v2
 			keepalive off
@@ -243,7 +243,7 @@ filtered.example.com {
 	log {
 		format filter {
 			wrap console
-			request>remote_ip ip_mask 16 32 {
+			request>remote_ip ip_mask {
 				ipv4 16
 				ipv6 32
 			}

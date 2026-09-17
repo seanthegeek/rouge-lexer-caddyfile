@@ -670,12 +670,13 @@ module Rouge
       # :log_filter_block instead of popping out to the enclosing state.
       # Every documented filter action that takes a block (ip_mask, cookie,
       # query) shares that same nested-block grammar, regardless of what
-      # precedes the brace (ip_mask's block follows two extra arguments,
-      # e.g. "ip_mask 16 32 { }", so matching specific words before the
-      # brace — as an earlier version of this state did — missed it and let
-      # the state fall back to the generic OPEN_BLOCK pop, which returned
-      # all the way to :log_format_block and let its closing "}" pop back to
-      # :root one level too early, mis-scoping everything that followed).
+      # precedes the brace: e.g. matching specific words directly before the
+      # brace, as an earlier version of this state did, missed a filter
+      # action whose block follows other arguments first (ip_mask's block
+      # follows optional positional ipv4/ipv6 shorthand values) and let the
+      # state fall back to the generic OPEN_BLOCK pop, which returned all the
+      # way to :log_format_block and let its closing "}" pop back to :root
+      # one level too early, mis-scoping everything that followed.
       state :log_field_args do
         rule OPEN_BLOCK do
           token Punctuation
