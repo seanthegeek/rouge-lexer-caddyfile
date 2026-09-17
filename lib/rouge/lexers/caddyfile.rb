@@ -86,12 +86,12 @@ module Rouge
       def self.subdirectives
         @subdirectives ||= Set.new %w(
           0rtt allow alpn alt_http_port alt_tlsalpn_port any_common_name ask authority
-          backup_time_format browse ca ca_root caller_key capture_stderr cert ciphers
-          client_auth client_ip_headers cookie curves defer delete deny dir
+          backup_time_format browse ca ca_root caller_key capture_stderr cert cert_selection ciphers
+          client_auth client_ip_headers cookie curves defer delete deny dial_timeout dir dir_mode
           disable_canonical_uris disable_http_challenge disable_tlsalpn_challenge dns
           dns_challenge_override_domain dns_ttl duration_format dynamic eab
-          enable_full_duplex endpoints enforce_origin env exclude fail_duration
-          fallback_policy fields file_limit filter flush_interval force_automate format
+          enable_full_duplex endpoints enforce_origin env etag_file_extensions exclude fail_duration
+          fallback_policy fields file_limit filter first flush_interval force_automate format
           get_certificate handle_response handshake_timeout hash header_down header_up
           health_body health_fails health_follow_redirects health_headers
           health_interval health_method health_passes health_port health_request_body
@@ -107,15 +107,15 @@ module Rouge
           propagation_timeout protocols proxy_protocol read_body read_header
           read_timeout regexp rename renegotiation renewal_window_ratio replace
           replace_status request_buffers resolve_root_symlink response_buffers
-          reuse_private_keys reveal_symlinks roll_at roll_disabled roll_interval
-          roll_keep roll_keep_for roll_local_time roll_minutes roll_size
+          reuse_private_keys reveal_symlinks roll_at roll_compression roll_disabled
+          roll_interval roll_keep roll_keep_for roll_local_time roll_minutes roll_size
           roll_uncompressed root root_cn root_common_name sampling server_name
-          sign_with_root soft_start sort split split_path stacktrace_key
-          stream_close_delay stream_timeout strict_sni_host test_dir thereafter time_key
+          sign_with_root soft_start sort split split_path stacktrace_key status
+          stream_buffer_size stream_close_delay stream_timeout strict_sni_host test_dir thereafter time_key
           time_local timeout timeouts tls to trace trust_der trust_pool trusted_proxies
           trusted_proxies_strict trusted_proxies_unix trusted_roots try_files try_policy
           unhealthy_latency unhealthy_request_count unhealthy_status validity_days
-          verifier wrap write write_timeout
+          verbose_logs verifier wrap write write_timeout
         )
       end
 
@@ -153,11 +153,12 @@ module Rouge
         @values ||= Set.new %w(
           DEBUG ERROR FATAL INFO PANIC WARN acme after argon2id asc bcrypt before br
           console desc disable_certs disable_redirects discard ed25519 file file_system
-          first first_exist first_exist_fallback grpc gzip h1 h2 h2c h3 http
-          http_redirect https ignore ignore_loaded_certs insecure_off json largest_size
-          last local most_recently_modified namedirfirst net p256 p384 pem_file
-          private_ranges proxy_protocol reject require rsa2048 rsa4096 size skip
-          smallest smallest_size static stderr stdout time tls use zerossl zstd
+          filter first first_exist first_exist_fallback freely from_file grpc gzip h1 h2
+          h2c h3 http http_redirect https ignore ignore_loaded_certs inherit insecure_off
+          json largest_size last local most_recently_modified name namedirfirst net never
+          none once p256 p384 pem_file private_ranges proxy_protocol reject request require
+          require_and_verify rsa2048 rsa4096 size skip smallest smallest_size static stderr
+          stdout time tls use verify_if_given zerossl zstd
         )
       end
 
