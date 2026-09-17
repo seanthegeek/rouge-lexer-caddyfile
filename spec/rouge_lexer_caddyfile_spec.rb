@@ -225,19 +225,22 @@ class RougeLexerCaddyfileTest < Minitest::Test
     assert_includes toks, [Rouge::Token::Tokens::Keyword::Constant, 'off']
   end
 
-  def test_format_precedence_does_not_leak_to_unrelated_site_blocks
-    # review r4040800739: log's "format" subdirective must only gain
-    # log-filter-action precedence (:format_args) while actually inside a
-    # log block (:log_block) -- not for the rest of the file. A later,
-    # separate site block's own "format" word (here: an unrecognized word,
-    # standing in for a same-named subdirective some other directive or
-    # plugin might have) must resolve as an ordinary word, not be swept into
-    # log's field-list dispatch just because an earlier site block used log.
-    src = "site1.com {\n\tlog {\n\t\tformat console\n\t}\n}\n" \
-          "site2.com {\n\tsome_directive format filter {\n\t\tfoo bar\n\t}\n}\n"
+  def test_format_precedence_does_not_leak_to_unrelated_directive_blocks
+    # review r4040800739 (fix), r4041065103 (this test's own fixture): log's
+    # "format" subdirective must only gain log-filter-action precedence
+    # (:format_args) while actually inside a log block (:log_block) -- not
+    # in every directive's arguments. "format" has to be the *line-start*
+    # word of its own line to exercise :root's/:log_block's word dispatch at
+    # all -- as an argument (e.g. "some_directive format filter {") it never
+    # reaches that dispatch and the test would pass whether or not the
+    # scoping fix is in place. Here "format filter {" starts its own line
+    # inside an unrelated directive's block (not log's), so a nested
+    # "replace" -- also a plugin directive -- must stay a plain Keyword, not
+    # be misread as the log filter action.
+    src = "example.com {\n\treverse_proxy backend {\n\t\tformat filter {\n\t\t\treplace foo\n\t\t}\n\t}\n}\n"
     toks = tokens(src)
-    assert_includes toks, [Rouge::Token::Tokens::Name::Attribute, 'format']  # site1's log format
-    assert_includes toks, [Rouge::Token::Tokens::Name, 'format']             # site2's unrelated word
+    assert_includes toks, [Rouge::Token::Tokens::Name::Attribute, 'format']
+    assert_includes toks, [Rouge::Token::Tokens::Keyword, 'replace']
   end
 
   def test_log_block_nesting_survives_sampling_and_output_sub_blocks
@@ -274,6 +277,28 @@ class RougeLexerCaddyfileTest < Minitest::Test
     assert_includes toks, [Rouge::Token::Tokens::Name::Attribute, 'ipv6']
     assert_includes toks, [Rouge::Token::Tokens::Name::Attribute, 'replace']
     refute_includes toks, [Rouge::Token::Tokens::Keyword, 'replace']
+  end
+
+  def test_global_log_option_format_filter_scoping
+    # review r4041065043: the global log *option* (:global_block) reuses the
+    # same :log_block/:format_args chain as the log *directive* (:root), so
+    # "format" gets log-filter-action precedence there too. Also verifies a
+    # <field> name that happens to collide with another subdirective's name
+    # ("status", file_server's status override) stays a plain field (Name)
+    # rather than being read as that subdirective -- :log_fields_block never
+    # consults the subdirectives set for field names, only :log_block does
+    # for log's own top-level options.
+    src = "{\n\tlog {\n\t\tformat filter {\n\t\t\tfields {\n\t\t\t\tstatus delete\n\t\t\t\t" \
+          "set_cookie cookie {\n\t\t\t\t\treplace a b\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t}\n}\n" \
+          "example.com {\n\treverse_proxy backend\n}\n"
+    toks = tokens(src)
+    assert_includes toks, [Rouge::Token::Tokens::Keyword::Declaration, 'log']
+    assert_includes toks, [Rouge::Token::Tokens::Name::Attribute, 'format']
+    assert_includes toks, [Rouge::Token::Tokens::Name, 'status']
+    refute_includes toks, [Rouge::Token::Tokens::Name::Attribute, 'status']
+    assert_includes toks, [Rouge::Token::Tokens::Name::Attribute, 'replace']
+    refute_includes toks, [Rouge::Token::Tokens::Keyword, 'replace']
+    assert_includes toks, [Rouge::Token::Tokens::Keyword, 'reverse_proxy']
   end
 
   private

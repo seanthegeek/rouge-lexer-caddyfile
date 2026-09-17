@@ -447,17 +447,28 @@ module Rouge
 
         rule WORD do |m|
           word = m[0]
-          if self.class.global_options.include?(word) || self.class.plugin_global_options.include?(word)
+          if word == 'log'
+            # The global log option's block is the same :log_block used by
+            # the log directive (see :root), so "format" gets log-filter
+            # precedence there too, and a field name that happens to match
+            # another subdirective's name (e.g. "status") stays a plain
+            # field instead of being read as that subdirective.
             token Keyword::Declaration
+            push :log_args
+          elsif self.class.global_options.include?(word) || self.class.plugin_global_options.include?(word)
+            token Keyword::Declaration
+            push :gargs
           elsif self.class.subdirectives.include?(word) || self.class.plugin_subdirectives.include?(word)
             token Name::Attribute
+            push :gargs
           elsif word =~ ADDRESS
             # listener addresses of layer4 servers
             token Name::Namespace
+            push :gargs
           else
             token Name
+            push :gargs
           end
-          push :gargs
         end
 
         rule %r/[{},]/, Punctuation
