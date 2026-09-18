@@ -14,13 +14,33 @@ module Rouge
     # opening brace at the end of a line and the closing brace on a line by
     # itself. This lexer tracks that structure with a small set of states:
     #
-    # * +:root+          - line starts inside site blocks, snippets and
-    #                      directive blocks
-    # * +:global_block+  - line starts inside the global options block
-    # * +:matcher_block+ - line starts inside a named matcher block
-    # * +:address+       - the remainder of a site address line
-    # * +:args+, +:gargs+, +:margs+ - the arguments of a line in each of the
-    #                      three block kinds
+    # * +:root+             - line starts inside site blocks, snippets and
+    #                         directive blocks
+    # * +:global_block+     - line starts inside the global options block
+    # * +:matcher_block+    - line starts inside a named matcher block, and
+    #                         (like +:log_block+ below) nests properly: each
+    #                         block it opens (e.g. "not { }") pushes another
+    #                         +:matcher_block+ frame rather than popping out
+    # * +:log_block+        - line starts inside the log directive/option's
+    #                         own block, at any nesting depth (its own top
+    #                         level, or inside a nested "output { }" /
+    #                         "sampling { }") — kept separate from +:root+,
+    #                         which every *other* directive's block reuses
+    #                         flatly, so that log's "format" subdirective
+    #                         (see below) only gets special treatment inside
+    #                         an actual log block, never a same-named
+    #                         subdirective some other directive or plugin has
+    # * +:log_format_block+, +:log_fields_block+, +:log_filter_block+ - line
+    #                         starts inside log's "format filter { }" /
+    #                         "format append { }", its nested "fields { }",
+    #                         and a filter action's own "{ }" sub-block
+    #                         (ip_mask's, cookie's, query's), respectively —
+    #                         so their filter-action words only take
+    #                         precedence there, not in every directive's
+    #                         arguments
+    # * +:address+          - the remainder of a site address line
+    # * +:args+, +:gargs+, +:margs+, +:log_args+, +:format_args+,
+    #   +:log_field_args+  - the arguments of a line in each block kind above
     #
     # Keywords come from the official Caddyfile documentation, plus the
     # documentation of the twenty most downloaded plugins on
@@ -76,20 +96,53 @@ module Rouge
       #          https://caddyserver.com/docs/caddyfile/matchers (file matcher)
       #          https://caddyserver.com/docs/caddyfile/concepts (lb_policy)
       #          https://caddyserver.com/docs/caddyfile/directives (handle_response)
+      #          https://caddyserver.com/docs/caddyfile/directives/log
+      #          https://caddyserver.com/docs/caddyfile/directives/tls
+      #          https://caddyserver.com/docs/caddyfile/directives/reverse_proxy
+      #          https://caddyserver.com/docs/caddyfile/directives/encode
+      #          https://caddyserver.com/docs/caddyfile/directives/header
+      #          https://caddyserver.com/docs/caddyfile/directives/file_server
+      #          https://caddyserver.com/docs/caddyfile/directives/php_fastcgi
       def self.subdirectives
         @subdirectives ||= Set.new %w(
-          0rtt allow any_common_name ask ca cert client_ip_headers deny dns
-          enable_full_duplex enforce_origin exclude fallback_policy format
-          handle_response http_redirect idle include intermediate
-          intermediate_cn intermediate_lifetime issuer keepalive_count
-          keepalive_idle keepalive_interval key key_id lb_policy level
-          listener_wrappers log_credentials mac_key maintenance_interval
-          max_header_size name observe_catchall_hosts on on_demand origins
-          otlp output per_host permission protocols proxy_protocol read_body
-          read_header renewal_window_ratio root root_cn root_common_name
-          split_path strict_sni_host timeout timeouts tls trace
-          trusted_proxies trusted_proxies_strict trusted_proxies_unix
-          try_files try_policy write
+          0rtt allow alpn alt_http_port alt_tlsalpn_port any_common_name ask authority
+          backup_time_format browse ca ca_root caller_key capture_stderr cert ciphers
+          client_auth client_ip_headers compression cookie curves defer delete deny
+          dial_fallback_delay dial_timeout dir disable_canonical_uris
+          disable_http_challenge disable_tlsalpn_challenge dns
+          dns_challenge_override_domain dns_ttl duration_format dynamic eab
+          enable_full_duplex endpoints enforce_origin env exclude
+          expect_continue_timeout fail_duration fallback_policy fields file file_limit
+          filter first flush_interval folder force_automate format get_certificate
+          handle_response handshake_timeout hash header_down header_up health_body
+          health_fails health_follow_redirects health_headers health_interval
+          health_method health_passes health_port health_request_body health_status
+          health_timeout health_upstream health_uri hostnames http_redirect idle include
+          index insecure_secrets_log insecure_skip_verify intermediate intermediate_cn
+          intermediate_lifetime interval ip_mask ipv4 ipv6 issuer keepalive
+          keepalive_count keepalive_idle keepalive_idle_conns keepalive_idle_conns_per_host
+          keepalive_interval key key_id keys lb_policy lb_retries lb_retry_match
+          lb_try_duration lb_try_interval level level_format level_key lifetime
+          line_ending listener_wrappers load log_credentials mac_key
+          maintenance_interval max_conns_per_host max_fails max_header_size
+          max_response_header message_key minimum_length mode name name_key
+          network_proxy no_hostname observe_catchall_hosts on on_demand origins otlp
+          output pem pem_file per_host permission precompressed profile
+          propagation_delay propagation_timeout protocols proxy_protocol query read_body
+          read_buffer read_header read_timeout regexp rename renegotiation
+          renewal_window_ratio replace replace_status request_buffers
+          resolve_root_symlink resolvers response_buffers response_header_timeout
+          reuse_private_keys reveal_symlinks roll_at roll_disabled roll_interval
+          roll_keep roll_keep_for roll_local_time roll_minutes roll_size
+          roll_uncompressed root root_cn root_common_name sampling server_name
+          sign_with_root soft_start sort split split_path stacktrace_key status storage
+          stream_close_delay stream_timeout strict_sni_host test_dir thereafter time_key
+          time_local timeout timeouts tls tls_client_auth tls_curves tls_except_ports
+          tls_insecure_skip_verify tls_renegotiation tls_server_name tls_timeout
+          tls_trust_pool to trace transport trust_der trust_pool trusted_proxies
+          trusted_proxies_strict trusted_proxies_unix trusted_roots try_files try_policy
+          unhealthy_latency unhealthy_request_count unhealthy_status validity_days
+          verifier versions wrap write write_buffer write_timeout
         )
       end
 
@@ -120,16 +173,26 @@ module Rouge
       # Sources: https://caddyserver.com/docs/caddyfile/options
       #          https://caddyserver.com/docs/caddyfile/matchers
       #          https://caddyserver.com/docs/caddyfile/patterns (encode)
+      #          https://caddyserver.com/docs/caddyfile/directives/log
+      #          https://caddyserver.com/docs/caddyfile/directives/file_server
+      #          https://caddyserver.com/docs/caddyfile/directives/basic_auth
+      #          https://caddyserver.com/docs/caddyfile/directives/tls (client_auth,
+      #          renegotiation, tls directive argument, trust pool providers, verifier
+      #          loaders, issuer modules)
+      #          https://caddyserver.com/docs/caddyfile/directives/reverse_proxy
+      #          (network_proxy, proxy_protocol)
       def self.values
         @values ||= Set.new %w(
-          DEBUG ERROR FATAL INFO PANIC WARN
-          acme after before br disable_certs disable_redirects ed25519 file
-          file_system first first_exist first_exist_fallback grpc gzip h1 h2
-          h2c h3 http http_redirect https ignore ignore_loaded_certs
-          insecure_off json largest_size last local most_recently_modified
-          p256 p384 pem_file private_ranges proxy_protocol reject require
-          rsa2048 rsa4096 skip smallest smallest_size static stdout tls use
-          zerossl zstd
+          DEBUG ERROR FATAL INFO PANIC WARN acme after append argon2id asc bcrypt before
+          br console cookie delete desc disable_certs disable_redirects discard ed25519
+          file file_system filter first first_exist first_exist_fallback folder freely
+          grpc gzip h1 h2 h2c h3 hash http http_redirect https ignore
+          ignore_loaded_certs inline insecure_off internal ip_mask json largest_size
+          last leaf local most_recently_modified name namedirfirst net never none once
+          p256 p384 pem pem_file pki_intermediate pki_root private_ranges proxy_protocol
+          query regexp reject rename replace request require require_and_verify rsa2048
+          rsa4096 size skip smallest smallest_size static stderr stdout storage
+          tailscale time tls tls1.2 tls1.3 url use v1 v2 verify_if_given zerossl zstd
         )
       end
 
@@ -270,6 +333,14 @@ module Rouge
       # Site addresses contain a dot, colon, slash or wildcard, or are localhost.
       ADDRESS = %r/[.:\/*]|\Alocalhost\z/
 
+      # log's "format filter {" / "format append {": opens the field list
+      # handled by :log_format_block. Matched only from :format_args (the
+      # dedicated argument state pushed for the 'format' subdirective), not
+      # from the generic :args every other subdirective and plugin construct
+      # shares, so this never fires outside a log directive's format module.
+      # Source: https://caddyserver.com/docs/caddyfile/directives/log
+      LOG_FORMAT_BLOCK = %r/(filter|append)([ \t]*)(\{)(?=[ \t]*(?:#.*)?\r?$)/
+
       state :block_common do
         rule %r/\s+/, Text::Whitespace
         rule %r/#.*/, Comment::Single
@@ -313,11 +384,23 @@ module Rouge
 
         rule WORD do |m|
           word = m[0]
-          if self.class.directives.include?(word) || self.class.plugin_directives.include?(word)
+          if word == 'log'
+            # The log directive's own block gets a dedicated state
+            # (:log_block) instead of reusing :root, so that its "format"
+            # subdirective's filter-action precedence (see :format_args)
+            # only ever applies inside an actual log block, not to a
+            # same-named "format" subdirective some other directive or
+            # plugin might have.
+            token Keyword
+            push :log_args
+          elsif self.class.directives.include?(word) || self.class.plugin_directives.include?(word)
             token Keyword
             push :args
-          elsif word == 'match'
-            # match blocks (rate_limit, replace) contain matchers
+          elsif word == 'match' || word == 'lb_retry_match'
+            # match blocks (rate_limit, replace) and reverse_proxy's
+            # lb_retry_match (same matcher-token syntax as a named matcher,
+            # minus the @name) both contain matchers.
+            # Source: https://caddyserver.com/docs/caddyfile/directives/reverse_proxy
             token Name::Attribute
             push :margs
           elsif self.class.subdirectives.include?(word) || self.class.plugin_subdirectives.include?(word)
@@ -364,17 +447,28 @@ module Rouge
 
         rule WORD do |m|
           word = m[0]
-          if self.class.global_options.include?(word) || self.class.plugin_global_options.include?(word)
+          if word == 'log'
+            # The global log option's block is the same :log_block used by
+            # the log directive (see :root), so "format" gets log-filter
+            # precedence there too, and a field name that happens to match
+            # another subdirective's name (e.g. "status") stays a plain
+            # field instead of being read as that subdirective.
             token Keyword::Declaration
+            push :log_args
+          elsif self.class.global_options.include?(word) || self.class.plugin_global_options.include?(word)
+            token Keyword::Declaration
+            push :gargs
           elsif self.class.subdirectives.include?(word) || self.class.plugin_subdirectives.include?(word)
             token Name::Attribute
+            push :gargs
           elsif word =~ ADDRESS
             # listener addresses of layer4 servers
             token Name::Namespace
+            push :gargs
           else
             token Name
+            push :gargs
           end
-          push :gargs
         end
 
         rule %r/[{},]/, Punctuation
@@ -478,6 +572,164 @@ module Rouge
           token classify_argument(m[0])
         end
         mixin :arg_fallback
+      end
+
+      # Arguments of a line directly inside log's own block: the initial
+      # "log" line (from :root's word == 'log'), and "output"/"sampling",
+      # log's other two subdirectives that can open a block. Routing all
+      # three through this same state — instead of the generic :args, which
+      # would pop out to whatever is *below* :log_block — means every block
+      # they open pushes another :log_block frame, so each nested block's
+      # own "}" pops back to the right level instead of leaking out of log's
+      # block entirely (matching how :margs/:matcher_block nest "not { }").
+      state :log_args do
+        rule OPEN_BLOCK do
+          token Punctuation
+          pop!
+          push :log_block
+        end
+
+        mixin :args
+      end
+
+      # Line starts inside a log directive/option's own block, at any
+      # nesting depth (log's own top level, or inside a nested "output { }"
+      # / "sampling { }"). Identical to :root except "format", "output" and
+      # "sampling" are intercepted before :root's generic subdirective
+      # dispatch would treat them like any other subdirective:
+      # - "format" needs log-filter-action precedence (see :format_args)
+      #   that must not leak to a same-named subdirective some other
+      #   directive or plugin has outside an actual log block;
+      # - "output"/"sampling" must route their own block back through
+      #   :log_args (see above) rather than the generic :args, so this
+      #   state's own "}" only fires for a "}" that's actually log's own
+      #   (or one of these two subdirectives' own), never one belonging to
+      #   a deeper, unrelated nested block.
+      state :log_block do
+        rule %r/\}/, Punctuation, :pop!
+
+        rule %r/(?:output|sampling)#{BOUNDARY}/ do
+          token Name::Attribute
+          push :log_args
+        end
+
+        rule %r/format#{BOUNDARY}/ do
+          token Name::Attribute
+          push :format_args
+        end
+
+        mixin :root
+      end
+
+      # Arguments of log's "format" line specifically (pushed only from
+      # :log_block's "format" rule above). Recognises "filter {" / "append {"
+      # so their field list gets log-filter-action precedence. Any other
+      # argument is a plain encoder name (e.g. "format json"), which — like
+      # every encoder, including filter/append's own "wrap" — can open its
+      # OWN options block ("format json { message_key ... }"); mixing in
+      # :log_args instead of :args means that block returns to :log_block
+      # (the same brace-preserving handling "output"/"sampling" already get)
+      # rather than popping out through it.
+      # Source: https://caddyserver.com/docs/caddyfile/directives/log
+      state :format_args do
+        rule LOG_FORMAT_BLOCK do
+          groups Name::Constant, Text::Whitespace, Punctuation
+          pop!
+          push :log_format_block
+        end
+
+        mixin :log_args
+      end
+
+      # Line starts inside "format filter { }" / "format append { }" (see
+      # LOG_FORMAT_BLOCK). "fields { }" opens the same field list one level
+      # deeper; "wrap" takes an encoder-module argument that — like the
+      # encoder in :format_args above — can open its own options block, so
+      # its own line reuses :log_args too: content inside that block is
+      # dispatched by the same subdirective-aware :log_block as "format
+      # json { }" directly gets (message_key etc. are ordinary log
+      # subdirectives, not filter field names), and once it closes, that
+      # returns to whatever :log_args was pushed from — here,
+      # :log_format_block, correctly resuming wrap's sibling field lines.
+      # Anything other than "wrap"/"fields" is a bare <field> name using the
+      # fields-block-optional shortcut, whose filter action follows in
+      # argument position.
+      # Source: https://caddyserver.com/docs/caddyfile/directives/log
+      state :log_format_block do
+        mixin :block_common
+        rule %r/\}/, Punctuation, :pop!
+
+        rule %r/(fields)([ \t]*)(\{)(?=[ \t]*(?:#.*)?\r?$)/ do
+          groups Name::Attribute, Text::Whitespace, Punctuation
+          push :log_fields_block
+        end
+
+        rule WORD do |m|
+          word = m[0]
+          if word == 'wrap'
+            token Name::Attribute
+            push :log_args
+          else
+            token Name
+            push :log_field_args
+          end
+        end
+      end
+
+      # Line starts inside log format filter/append's "fields { }" block:
+      # every line is a bare <field> name, with its filter action following
+      # in argument position.
+      state :log_fields_block do
+        mixin :block_common
+        rule %r/\}/, Punctuation, :pop!
+
+        rule WORD do |m|
+          token Name
+          push :log_field_args
+        end
+      end
+
+      # Arguments of a <field> line inside log's format filter/append field
+      # list — the only argument state that routes an opening block to
+      # :log_filter_block instead of popping out to the enclosing state.
+      # Every documented filter action that takes a block (ip_mask, cookie,
+      # query) shares that same nested-block grammar, regardless of what
+      # precedes the brace: e.g. matching specific words directly before the
+      # brace, as an earlier version of this state did, missed a filter
+      # action whose block follows other arguments first (ip_mask's block
+      # follows optional positional ipv4/ipv6 shorthand values) and let the
+      # state fall back to the generic OPEN_BLOCK pop, which returned all the
+      # way to :log_format_block and let its closing "}" pop back to :root
+      # one level too early, mis-scoping everything that followed.
+      state :log_field_args do
+        rule OPEN_BLOCK do
+          token Punctuation
+          pop!
+          push :log_filter_block
+        end
+
+        mixin :args
+      end
+
+      # Line starts inside a log filter action's own nested block: ip_mask's
+      # "{ ipv4 <cidr> ipv6 <cidr> }", or cookie/query's
+      # "{ delete|replace|hash <key> ... }" (see :log_field_args). Filter and
+      # sub-option words are checked before falling back to a plain Name, so
+      # e.g. "replace" reads as the filter action (Name::Attribute) rather
+      # than the unrelated top-level plugin directive of the same name.
+      state :log_filter_block do
+        mixin :block_common
+        rule %r/\}/, Punctuation, :pop!
+
+        rule WORD do |m|
+          word = m[0]
+          if self.class.subdirectives.include?(word) || self.class.plugin_subdirectives.include?(word)
+            token Name::Attribute
+          else
+            token Name
+          end
+          push :args
+        end
       end
 
       # Arguments of a line in the global options block.
