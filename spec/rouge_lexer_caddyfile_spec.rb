@@ -175,6 +175,7 @@ class RougeLexerCaddyfileTest < Minitest::Test
 
     [wrapped, shortcut].each do |toks|
       assert(toks.none? { |tok, _| tok == Rouge::Token::Tokens::Error }, 'no Error tokens')
+      assert_includes toks, [Rouge::Token::Tokens::Name, 'set_cookie']
       assert_includes toks, [Rouge::Token::Tokens::Name::Constant, 'cookie']
       assert_includes toks, [Rouge::Token::Tokens::Name::Attribute, 'replace']
       refute_includes toks, [Rouge::Token::Tokens::Keyword, 'replace']
@@ -299,6 +300,32 @@ class RougeLexerCaddyfileTest < Minitest::Test
     assert_includes toks, [Rouge::Token::Tokens::Name::Attribute, 'replace']
     refute_includes toks, [Rouge::Token::Tokens::Keyword, 'replace']
     assert_includes toks, [Rouge::Token::Tokens::Keyword, 'reverse_proxy']
+  end
+
+  def test_encoder_module_own_options_block
+    # review r4041158388 (comment) and its suppressed sibling on :log_format_block's
+    # "wrap": any encoder (json, console, ...) can open its own options
+    # block ("format json { message_key ... }" / "wrap json { ... }" inside
+    # filter/append), documented as common properties shared by "most
+    # encoders". Pushing plain :args there let the encoder's own "}" pop out
+    # one level too far. Covers all three places this could happen: a bare
+    # "format json { }", "wrap json { }" inside "format filter { }" (whose
+    # content must be dispatched as ordinary log subdirectives, not read as
+    # filter field names), and confirms sibling lines after each resume
+    # correctly at their own level.
+    src = "example.com {\n\tlog {\n\t\tformat json {\n\t\t\tmessage_key msg\n\t\t}\n\t\tlevel INFO\n\t}\n" \
+          "\treverse_proxy backend\n}\n"
+    toks = tokens(src)
+    assert_includes toks, [Rouge::Token::Tokens::Name::Attribute, 'message_key']
+    assert_includes toks, [Rouge::Token::Tokens::Name::Attribute, 'level']
+    assert_includes toks, [Rouge::Token::Tokens::Keyword, 'reverse_proxy']
+
+    src2 = "example.com {\n\tlog {\n\t\tformat filter {\n\t\t\twrap json {\n\t\t\t\tmessage_key msg\n\t\t\t}\n" \
+           "\t\t\trequest>uri delete\n\t\t}\n\t}\n\treverse_proxy backend\n}\n"
+    toks2 = tokens(src2)
+    assert_includes toks2, [Rouge::Token::Tokens::Name::Attribute, 'message_key']
+    assert_includes toks2, [Rouge::Token::Tokens::Name::Constant, 'delete']
+    assert_includes toks2, [Rouge::Token::Tokens::Keyword, 'reverse_proxy']
   end
 
   private

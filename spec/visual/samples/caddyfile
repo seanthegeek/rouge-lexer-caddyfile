@@ -242,7 +242,9 @@ mtls.example.com {
 filtered.example.com {
 	log {
 		format filter {
-			wrap console
+			wrap console {
+				time_format iso8601
+			}
 			request>remote_ip ip_mask {
 				ipv4 16
 				ipv6 32

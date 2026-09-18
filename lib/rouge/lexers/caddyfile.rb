@@ -623,9 +623,14 @@ module Rouge
 
       # Arguments of log's "format" line specifically (pushed only from
       # :log_block's "format" rule above). Recognises "filter {" / "append {"
-      # so their field list gets log-filter-action precedence; any other
-      # argument (an encoder name with no block, e.g. plain "format json")
-      # falls through to ordinary :args behavior.
+      # so their field list gets log-filter-action precedence. Any other
+      # argument is a plain encoder name (e.g. "format json"), which — like
+      # every encoder, including filter/append's own "wrap" — can open its
+      # OWN options block ("format json { message_key ... }"); mixing in
+      # :log_args instead of :args means that block returns to :log_block
+      # (the same brace-preserving handling "output"/"sampling" already get)
+      # rather than popping out through it.
+      # Source: https://caddyserver.com/docs/caddyfile/directives/log
       state :format_args do
         rule LOG_FORMAT_BLOCK do
           groups Name::Constant, Text::Whitespace, Punctuation
@@ -633,14 +638,22 @@ module Rouge
           push :log_format_block
         end
 
-        mixin :args
+        mixin :log_args
       end
 
       # Line starts inside "format filter { }" / "format append { }" (see
       # LOG_FORMAT_BLOCK). "fields { }" opens the same field list one level
-      # deeper; "wrap" takes an ordinary encoder-module argument; anything
-      # else is a bare <field> name using the fields-block-optional shortcut,
-      # whose filter action follows in argument position.
+      # deeper; "wrap" takes an encoder-module argument that — like the
+      # encoder in :format_args above — can open its own options block, so
+      # its own line reuses :log_args too: content inside that block is
+      # dispatched by the same subdirective-aware :log_block as "format
+      # json { }" directly gets (message_key etc. are ordinary log
+      # subdirectives, not filter field names), and once it closes, that
+      # returns to whatever :log_args was pushed from — here,
+      # :log_format_block, correctly resuming wrap's sibling field lines.
+      # Anything other than "wrap"/"fields" is a bare <field> name using the
+      # fields-block-optional shortcut, whose filter action follows in
+      # argument position.
       # Source: https://caddyserver.com/docs/caddyfile/directives/log
       state :log_format_block do
         mixin :block_common
@@ -655,7 +668,7 @@ module Rouge
           word = m[0]
           if word == 'wrap'
             token Name::Attribute
-            push :args
+            push :log_args
           else
             token Name
             push :log_field_args
